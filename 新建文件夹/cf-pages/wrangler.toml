@@ -1,0 +1,21 @@
+name = "nebula-mail"
+compatibility_date = "2024-08-15"
+
+# Pages project config
+pages_build_output_dir = "./public"
+
+[vars]
+PUBLIC_DOMAIN = ""
+MAILGUN_API_BASE = "https://api.mailgun.net"
+MAILGUN_DOMAIN = ""
+MAILGUN_API_KEY = ""
+MAILGUN_SIGNING_KEY = ""
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mailbox_d1"
+database_id = "" # 填入 Cloudflare D1 数据库 ID（创建后在控制台可见）
+
+[[r2_buckets]]
+binding = "ATTACH"
+bucket_name = "mailbox-attachments"

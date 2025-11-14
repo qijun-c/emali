@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nebula Mail · Cloudflare Pages</title>
+  <style>
+    :root { --bg:#0A0E1A; --soft:#0F1426; --primary:#00E5FF; --accent:#7C3AED; }
+    body { margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: radial-gradient(ellipse at top, rgba(0,229,255,.06), transparent 60%), radial-gradient(ellipse at bottom, rgba(124,58,237,.05), transparent 60%), linear-gradient(#0A0E1A, #0F1426); color:#fff; }
+    .wrap{ max-width:1100px; margin:0 auto; padding:24px; }
+    .card{ background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.08); border-radius:12px; padding:16px; margin-bottom:16px; backdrop-filter: blur(6px); }
+    .btn{ background: rgba(0,229,255,.1); color:#00E5FF; border:1px solid rgba(0,229,255,.5); padding:8px 12px; border-radius:8px; cursor:pointer }
+    .btn:disabled{ opacity:.5; cursor:not-allowed }
+    .input{ width:100%; padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background: rgba(0,0,0,.3); color:#fff; outline:none }
+    .row{ display:grid; grid-template-columns: 1fr 1fr; gap:16px }
+    .list{ display:flex; flex-direction:column; gap:8px; max-height:360px; overflow:auto }
+    .item{ border:1px solid rgba(255,255,255,.12); border-radius:8px; padding:8px; cursor:pointer }
+    .muted{ color:rgba(255,255,255,.6) }
+    .mono{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color:#00E5FF }
+    .tag{ border:1px solid rgba(0,229,255,.5); color:#00E5FF; border-radius:6px; padding:2px 6px; display:inline-block; margin-left:8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Nebula Mail · Cloudflare Pages</h1>
+    <p class="muted">公开临时邮箱 · Functions+D1+R2 · 采用轮询刷新</p>
+
+    <div class="card">
+      <h3>生成随机地址</h3>
+      <button id="gen" class="btn">生成</button>
+      <span id="addr" class="mono"></span>
+      <span id="addrTag" class="tag" style="display:none">已复制</span>
+    </div>
+
+    <div class="card">
+      <h3>收件箱</h3>
+      <div class="row">
+        <div>
+          <label class="muted">本地部分（local）</label>
+          <input id="local" class="input" placeholder="如 nebula-xxxx" />
+          <div style="height:8px"></div>
+          <button id="load" class="btn">加载</button>
+          <div style="height:8px"></div>
+          <div id="list" class="list"></div>
+        </div>
+        <div>
+          <div id="detail" class="muted">选择一封邮件查看详情</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>发送测试邮件</h3>
+      <div class="row">
+        <div>
+          <input id="from" class="input" placeholder="From (发件人)" />
+          <div style="height:8px"></div>
+          <input id="to" class="input" placeholder="To (收件人)" />
+          <div style="height:8px"></div>
+          <input id="subject" class="input" placeholder="Subject (主题)" />
+        </div>
+        <div>
+          <textarea id="text" class="input" style="height:116px" placeholder="Text (纯文本)"></textarea>
+          <div style="height:8px"></div>
+          <button id="send" class="btn">发送</button>
+        </div>
+      </div>
+      <div id="sendStatus" class="muted" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = '/api';
+    const $ = (id) => document.getElementById(id);
+
+    async function apiGet(p){ const r = await fetch(API+p, {cache:'no-store'}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+    async function apiPost(p, b){ const r = await fetch(API+p, {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(b||{})}); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+    $('gen').onclick = async () => {
+      const r = await apiGet('/generate');
+      $('addr').textContent = r.address;
+      $('local').value = r.local;
+      try { await navigator.clipboard.writeText(r.address); $('addrTag').style.display='inline-block'; setTimeout(()=>$('addrTag').style.display='none', 1200);} catch {}
+    };
+
+    async function loadList(){
+      const local = $('local').value.trim();
+      if(!local){ $('list').innerHTML = '<div class="muted">请先输入 local</div>'; return; }
+      const rows = await apiGet('/messages?local='+encodeURIComponent(local));
+      $('list').innerHTML = '';
+      for(const m of rows){
+        const div = document.createElement('div');
+        div.className = 'item';
+        div.innerHTML = `<div>${m.subject||'(无主题)'}<div class="muted" style="font-size:12px">${m.from_address}</div></div>`;
+        div.onclick = ()=>openMsg(m.id);
+        $('list').appendChild(div);
+      }
+      if(rows.length===0){ $('list').innerHTML = '<div class="muted">暂无邮件</div>'; }
+    }
+
+    async function openMsg(id){
+      const m = await apiGet('/messages/'+id);
+      const att = (m.attachments||[]).map(a=>`<a href="${API}/attachments/${a.id}">附件: ${a.filename}</a>`).join('<br/>');
+      $('detail').innerHTML = `
+        <div style="font-weight:600">${m.subject||'(无主题)'}</div>
+        <div class="muted" style="font-size:12px">来自：${m.from_address}</div>
+        <div style="margin-top:8px"></div>
+        ${m.html_body ? m.html_body : `<pre style='white-space:pre-wrap'>${(m.text_body||'').replace(/[&<>]/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[s]))}</pre>`}
+        <div style="margin-top:8px"></div>
+        ${att||''}
+      `;
+    }
+
+    $('load').onclick = loadList;
+    setInterval(loadList, 5000);
+
+    $('send').onclick = async () => {
+      $('sendStatus').textContent = '发送中…';
+      try{
+        const res = await apiPost('/send', { from_address: $('from').value, to: $('to').value, subject: $('subject').value, text: $('text').value });
+        $('sendStatus').textContent = '已发送';
+      }catch(e){ $('sendStatus').textContent = '发送失败：'+(e.message||e); }
+    };
+  </script>
+</body>
+</html>
