@@ -1,0 +1,16 @@
+{
+	# Optional: enable debug logs
+	# debug
+}
+
+:80 {
+	encode gzip
+
+	# API routes
+	handle_path /api* {
+		reverse_proxy api:8000
+	}
+
+	# Everything else -> Next.js web
+	reverse_proxy web:3000
+}

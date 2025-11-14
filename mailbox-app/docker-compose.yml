@@ -1,0 +1,59 @@
+version: '3.9'
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mail_user
+      POSTGRES_PASSWORD: mail_pass
+      POSTGRES_DB: maildb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mail_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - ATTACHMENTS_DIR=${ATTACHMENTS_DIR}
+      - MAILGUN_DOMAIN=${MAILGUN_DOMAIN}
+      - MAILGUN_API_KEY=${MAILGUN_API_KEY}
+      - MAILGUN_SIGNING_KEY=${MAILGUN_SIGNING_KEY}
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - APP_ENV=${APP_ENV}
+    volumes:
+      - attachments_data:/data/attachments
+    ports:
+      - "8001:8000"
+
+  web:
+    build: ./frontend
+    environment:
+      - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE}
+    depends_on:
+      - api
+    ports:
+      - "3001:3000"
+
+  proxy:
+    image: caddy:2-alpine
+    depends_on:
+      - web
+      - api
+    ports:
+      - "8080:80"
+    volumes:
+      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
+
+volumes:
+  db_data:
+  attachments_data:
